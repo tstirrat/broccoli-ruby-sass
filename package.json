@@ -22,6 +22,7 @@
   ],
   "author": "Joe Fiorini",
   "license": "MIT",
+  "readmeFilename": "README.md",
   "bugs": {
     "url": "https://github.com/joefiorini/broccoli-ruby-sass/issues"
   },
