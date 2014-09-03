@@ -35,12 +35,13 @@ SassCompiler.prototype.read = function (readTree) {
   mkdirp.sync(path.dirname(destFile));
   return mapSeries(this.sourceTrees, readTree)
     .then(function (includePaths) {
-      includePaths.unshift(path.dirname(self.inputFile));
+      var inputFile = includePathSearcher.findFileSync(self.inputFile, includePaths);
+      includePaths.unshift(path.dirname(inputFile));
       self.sassOptions.loadPath = self.sassOptions.loadPath.concat(includePaths);
       var passedArgs = dargs(self.sassOptions, ['bundleExec']);
       var args = [
         'sass',
-        includePathSearcher.findFileSync(self.inputFile, includePaths),
+        inputFile,
         destFile
       ].concat(passedArgs);
 
