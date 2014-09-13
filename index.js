@@ -46,6 +46,7 @@ SassCompiler.prototype.write = function (readTree, destDir) {
       var passedArgs = dargs(self.sassOptions, ['bundleExec']);
       var args = [
         'sass',
+        '--no-cache',
         inputFile,
         destFile
       ].concat(passedArgs);
