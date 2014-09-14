@@ -36,7 +36,7 @@
   },
   "dependencies": {
     "mkdirp": "^0.3.5",
-    "broccoli-writer": "^0.1.1",
+    "broccoli-caching-writer": "^0.4.2",
     "promise-map-series": "^0.2.0",
     "dargs": "^0.1.0",
     "win-spawn": "^2.0.0",

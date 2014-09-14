@@ -1,16 +1,14 @@
-var fs = require('fs');
 var path = require('path');
 var mkdirp = require('mkdirp');
 var includePathSearcher = require('include-path-searcher');
-var Writer = require('broccoli-writer');
+var CachingWriter = require('broccoli-caching-writer');
 var mapSeries = require('promise-map-series');
-var _ = require('lodash');
 var dargs = require('dargs');
 var spawn = require('win-spawn');
 var Promise = require('rsvp').Promise;
 
 module.exports = SassCompiler;
-SassCompiler.prototype = Object.create(Writer.prototype);
+SassCompiler.prototype = Object.create(CachingWriter.prototype);
 SassCompiler.prototype.constructor = SassCompiler;
 
 function SassCompiler (sourceTrees, inputFile, outputFile, options) {
@@ -34,81 +32,86 @@ function SassCompiler (sourceTrees, inputFile, outputFile, options) {
 }
 
 SassCompiler.prototype.write = function (readTree, destDir) {
-  var self = this;
+  return mapSeries(this.sourceTrees, function (tree) {
+    this.inputTree = tree;
+    return CachingWriter.prototype.write.call(this, readTree, destDir);
+  }, this);
+};
+
+SassCompiler.prototype.updateCache = function (srcDir, destDir) {
   var bundleExec = this.sassOptions.bundleExec;
   var destFile = destDir + '/' + this.outputFile;
   mkdirp.sync(path.dirname(destFile));
-  return mapSeries(this.sourceTrees, readTree)
-    .then(function (includePaths) {
-      var inputFile = includePathSearcher.findFileSync(self.inputFile, includePaths);
-      includePaths.unshift(path.dirname(inputFile));
-      self.sassOptions.loadPath = self.sassOptions.loadPath.concat(includePaths);
-      var passedArgs = dargs(self.sassOptions, ['bundleExec']);
-      var args = [
-        'sass',
-        '--no-cache',
-        inputFile,
-        destFile
-      ].concat(passedArgs);
 
-      if(bundleExec) {
-        args.unshift('bundle', 'exec');
+  var inputFile = includePathSearcher.findFileSync(this.inputFile, srcDir);
+
+  // srcDir.unshift(path.dirname(inputFile));
+  this.sassOptions.loadPath = this.sassOptions.loadPath.concat(srcDir);
+  var passedArgs = dargs(this.sassOptions, ['bundleExec']);
+  var args = [
+    'sass',
+    '--no-cache',
+    inputFile,
+    destFile
+  ].concat(passedArgs);
+
+  if(bundleExec) {
+    args.unshift('bundle', 'exec');
+  }
+
+  if(path.extname(this.inputFile) === '.css') {
+    args.push('--scss');
+  }
+
+  return new Promise(function(resolve, reject) {
+    var cmd = args.shift();
+    var cp = spawn(cmd, args);
+
+    function isWarning(error) {
+      return /DEPRECATION WARNING/.test(error.toString()) || /WARNING:/.test(error.toString());
+    }
+
+    cp.on('error', function(err) {
+      if (isWarning(err)) {
+        console.warn(err);
+        return;
       }
 
-      if(path.extname(self.inputFile) === '.css') {
-        args.push('--scss');
-      }
-
-      return new Promise(function(resolve, reject) {
-        var cmd = args.shift();
-        var cp = spawn(cmd, args);
-
-        function isWarning(error) {
-          return /DEPRECATION WARNING/.test(error.toString()) || /WARNING:/.test(error.toString());
-        }
-
-        cp.on('error', function(err) {
-          if (isWarning(err)) {
-            console.warn(err);
-            return;
-          }
-
-          console.error('[broccoli-ruby-sass] '+ err);
-          reject(err);
-        });
-
-        var errors = '';
-
-        cp.on('data', function(data) {
-          // ignore deprecation warnings
-
-          if (isWarning(err)) {
-            console.warn(err);
-            return;
-          }
-
-          errors += data;
-        });
-
-        cp.stderr.on('data', function(data) {
-          if (!isWarning(data)) {
-            errors += data;
-          } else {
-            console.warn('[broccoli-ruby-sass] ' + data);
-          }
-        });
-
-        cp.on('close', function(code) {
-          if(errors) {
-            reject(errors);
-          }
-
-          if(code > 0) {
-            reject('broccoli-ruby-sass exited with error code ' + code);
-          }
-
-          resolve();
-        });
-      });
+      console.error('[broccoli-ruby-sass] '+ err);
+      reject(err);
     });
+
+    var errors = '';
+
+    cp.on('data', function(data) {
+      // ignore deprecation warnings
+
+      if (isWarning(err)) {
+        console.warn(err);
+        return;
+      }
+
+      errors += data;
+    });
+
+    cp.stderr.on('data', function(data) {
+      if (!isWarning(data)) {
+        errors += data;
+      } else {
+        console.warn('[broccoli-ruby-sass] ' + data);
+      }
+    });
+
+    cp.on('close', function(code) {
+      if(errors) {
+        reject(errors);
+      }
+
+      if(code > 0) {
+        reject('broccoli-ruby-sass exited with error code ' + code);
+      }
+
+      resolve(destDir);
+    });
+  });
 };
